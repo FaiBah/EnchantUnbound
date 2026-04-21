@@ -1,0 +1,82 @@
+name: Build ARM64
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+    # 1️⃣ Checkout repo
+    - uses: actions/checkout@v4
+
+    # 2️⃣ Get latest upstream version
+    - name: Get latest upstream version
+      id: get_version
+      run: |
+        VERSION=$(curl -s https://api.github.com/repos/TANGY009/EnchantUnbound/releases/latest | jq -r .tag_name)
+        echo "UPSTREAM_VERSION=$VERSION" >> $GITHUB_ENV
+        echo "TAG=$VERSION" >> $GITHUB_ENV
+        echo "Upstream version: $VERSION"
+
+    # 3️⃣ Clone EnchantUnbound
+    - name: Clone EnchantUnbound
+      run: git clone https://github.com/TANGY009/EnchantUnbound.git
+
+    # 4️⃣ Setup Xmake
+    - name: Setup Xmake
+      uses: xmake-io/github-action-setup-xmake@v1
+      with:
+        xmake-version: latest
+
+    # 5️⃣ Setup Android NDK
+    - name: Setup Android NDK
+      uses: nttld/setup-ndk@v1
+      with:
+        ndk-version: r25c
+        add-to-path: true
+
+    # 6️⃣ Install dependencies
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential
+
+    # 7️⃣ Build ARM64 .so
+    - name: Build ARM64 .so
+      run: |
+        cd EnchantUnbound
+        xmake config -y \
+          --plat=android \
+          --arch=arm64-v8a \
+          --ndk=${{ env.ANDROID_NDK_ROOT }}
+        xmake build -y
+        echo "List target folder:"
+        find build -type f -name "*.so" -exec ls -lh {} \;
+
+    # 8️⃣ Copy .so into versioned folder
+    - name: Copy .so into versioned folder
+      run: |
+        mkdir -p ./arm64-v8a/${UPSTREAM_VERSION}
+        find EnchantUnbound/build -type f -name "*.so" -exec cp {} ./arm64-v8a/${UPSTREAM_VERSION}/ \;
+        echo "Files in versioned folder:"
+        ls -lh ./arm64-v8a/${UPSTREAM_VERSION}/
+
+    # 9️⃣ Create Release
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ env.TAG }}
+        name: EnchantUnbound ${{ env.TAG }}
+        body: ARM64 build release
+        files: arm64-v8a/${{ env.UPSTREAM_VERSION }}/*.so
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
