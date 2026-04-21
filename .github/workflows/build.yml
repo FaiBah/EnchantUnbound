@@ -26,34 +26,48 @@ jobs:
     - name: Clone EnchantUnbound
       run: git clone https://github.com/TANGY009/EnchantUnbound.git
 
-    # 4️⃣ Setup Rust
-    - name: Set up Rust
-      uses: actions-rs/toolchain@v1
+    # 4️⃣ Setup Android NDK
+    - name: Setup Android NDK
+      run: |
+        mkdir -p /opt/android-ndk
+        cd /opt/android-ndk
+        wget -q https://dl.google.com/android/repository/android-ndk-r26b-linux.zip
+        unzip -q android-ndk-r26b-linux.zip
+        echo "ANDROID_NDK_ROOT=/opt/android-ndk/android-ndk-r26b" >> $GITHUB_ENV
+
+    # 5️⃣ Setup Xmake
+    - name: Setup Xmake
+      uses: xmake-io/github-action-setup-xmake@v1
       with:
-        toolchain: stable
-        target: aarch64-linux-android
-        default: true
+        xmake-version: latest
 
-    # 5️⃣ Install cargo-ndk
-    - name: Install cargo-ndk
-      run: cargo install cargo-ndk
+    # 6️⃣ Install dependencies
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential
 
-    # 6️⃣ Build ARM64 .so
+    # 7️⃣ Build ARM64 .so
     - name: Build ARM64 .so
       run: |
         cd EnchantUnbound
-        sed -i '/\[lib\]/,/crate-type/ s/^crate-type.*$/crate-type = ["cdylib"]/' Cargo.toml || true
-        cargo ndk -t arm64-v8a -- build --release
+        xmake config -y \
+          --plat=android \
+          --arch=arm64-v8a \
+          --ndk=$ANDROID_NDK_ROOT
+        xmake build -y
         echo "List target folder:"
-        ls -l target/aarch64-linux-android/release/
+        find build -type f -name "*.so" -exec ls -lh {} \;
 
-    # 7️⃣ Copy .so into versioned folder
+    # 8️⃣ Copy .so into versioned folder
     - name: Copy .so into versioned folder
       run: |
         mkdir -p ./arm64-v8a/${UPSTREAM_VERSION}
-        cp EnchantUnbound/target/aarch64-linux-android/release/*.so ./arm64-v8a/${UPSTREAM_VERSION}/
+        find EnchantUnbound/build -type f -name "*.so" -exec cp {} ./arm64-v8a/${UPSTREAM_VERSION}/ \;
+        echo "Files in versioned folder:"
+        ls -lh ./arm64-v8a/${UPSTREAM_VERSION}/
 
-    # 8️⃣ Create Release
+    # 9️⃣ Create Release
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
